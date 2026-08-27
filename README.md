@@ -1,6 +1,6 @@
 # Personal site
 
-A single-page academic homepage. Edit `index.html` for content. Drop a headshot at `assets/photo.jpg` and a CV at `files/cv.pdf`.
+A single-page academic homepage. Edit `index.html` for content. Drop a headshot at `assets/photo.jpg`. The CV is at `assets/Shun_Aso_CV.pdf`.
 
 ## Host it for free (GitHub Pages)
 
