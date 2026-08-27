@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>🍅Shun Aso</title>
   <meta name="description" content="Shun Aso — undergraduate researcher at Keio University SFC. Privacy-preserving AI for mental health: federated counseling LLMs and psychological state detection.">
+  <base href="/" id="site-base">
+  <script>
+    (function () {
+      var repo = location.pathname.split("/")[1];
+      document.getElementById("site-base").href =
+        repo === "SHUN_ASO" ? "/SHUN_ASO/" : "/";
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
