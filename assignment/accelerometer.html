@@ -27,6 +27,10 @@
   <p>X: <span id="accel-x">0.00</span></p>
   <p>Y: <span id="accel-y">0.00</span></p>
   <p>Z: <span id="accel-z">0.00</span></p>
+  <p>Magnitude: <span id="accel-mag">0.00</span> m/s²</p>
+
+  <h2>Activity breakpoint</h2>
+  <p>Holding the phone still stays under <strong>3.00 m/s²</strong>. A quick move or shake that reaches that boundary triggers an alert.</p>
 
   <script type="text/javascript">
     alert("Welcome to sample page 1!");
@@ -60,15 +64,44 @@
 
     // Function(1): to handle acceleration data
     // - This function will be called about 10-50 times per second
+    // Boundary between "phone is still" and "phone is being moved".
+    // acceleration excludes gravity, so a resting phone stays near 0.
+    const ACTIVITY_BREAKPOINT = 3;
+
+    let aboveBreakpoint = false;
+
     function formatAccel(value) {
       return value == null ? "0.00" : Number(value).toFixed(2);
     }
 
     function handleAcceleration(aevent) {
       const accel = aevent.acceleration || {};
-      $("#accel-x").text(formatAccel(accel.x));
-      $("#accel-y").text(formatAccel(accel.y));
-      $("#accel-z").text(formatAccel(accel.z));
+      const x = accel.x;
+      const y = accel.y;
+      const z = accel.z;
+      $("#accel-x").text(formatAccel(x));
+      $("#accel-y").text(formatAccel(y));
+      $("#accel-z").text(formatAccel(z));
+
+      if (x == null || y == null || z == null) {
+        return;
+      }
+
+      const magnitude = Math.sqrt(x * x + y * y + z * z);
+      $("#accel-mag").text(formatAccel(magnitude));
+
+      if (magnitude >= ACTIVITY_BREAKPOINT && !aboveBreakpoint) {
+        aboveBreakpoint = true;
+        alert(
+          "Activity breakpoint crossed: " +
+          magnitude.toFixed(2) +
+          " m/s² (boundary " +
+          ACTIVITY_BREAKPOINT.toFixed(2) +
+          " m/s²)."
+        );
+      } else if (magnitude < ACTIVITY_BREAKPOINT) {
+        aboveBreakpoint = false;
+      }
     }
   </script>
 </body>
