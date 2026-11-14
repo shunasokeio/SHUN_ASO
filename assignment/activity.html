@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Activity data collection</title>
+  <style>
+    :root {
+      --text: #111;
+      --muted: #555;
+      --line: #ddd;
+      --bg: #fff;
+      --accent: #111;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0 auto;
+      padding: 1rem 1rem 3rem;
+      max-width: 920px;
+      background: var(--bg);
+      color: var(--text);
+      font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    h1 { margin: 0 0 0.4rem; font-size: 1.6rem; }
+    h2 { margin: 1.6rem 0 0.5rem; font-size: 1.15rem; }
+
+    p { margin: 0.4rem 0; }
+
+    .hint { color: var(--muted); }
+
+    .labels, .controls, .file-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin: 0.8rem 0;
+    }
+
+    button {
+      min-height: 48px;
+      padding: 0.55rem 0.9rem;
+      border: 1.5px solid var(--accent);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      font-weight: 650;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+    }
+
+    button.selected,
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .status {
+      margin: 0.6rem 0;
+      padding: 0.75rem 0.9rem;
+      border-radius: 8px;
+      background: #f4f4f4;
+    }
+
+    .status strong { font-size: 1.35rem; }
+
+    .counts { color: var(--muted); font-size: 0.95rem; }
+
+    .live {
+      display: flex;
+      gap: 1rem;
+      margin: 0.4rem 0 0.8rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    th, td {
+      padding: 0.35rem 0.5rem;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+    }
+
+    th:first-child, td:first-child,
+    th.label, td.label {
+      text-align: left;
+    }
+
+    th { background: #fafafa; }
+
+    .empty { color: var(--muted); padding: 0.6rem; }
+
+    .activity-now {
+      margin: 0.4rem 0;
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+
+    .weka {
+      padding: 0.8rem 0.9rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Activity data collection</h1>
+  <p class="hint">Keep the phone in the same pocket. Record two minutes of one activity, then repeat for the others. Rows add up across sessions.</p>
+
+  <div class="labels" id="labels">
+    <button type="button" data-label="leg-shaking">Leg shaking</button>
+    <button type="button" data-label="leg-crossing">Leg crossing</button>
+    <button type="button" data-label="foot-tensing">Foot tensing</button>
+    <button type="button" data-label="still">Still</button>
+  </div>
+
+  <div class="controls">
+    <button type="button" class="primary" id="start">Start 2:00</button>
+    <button type="button" id="stop" disabled>Stop</button>
+  </div>
+
+  <div class="status">
+    <div>Activity: <strong id="current-label">choose one</strong></div>
+    <div>Time left: <strong id="countdown">2:00</strong></div>
+    <p class="counts" id="counts">Raw samples: 0 · Windows: 0</p>
+  </div>
+
+  <div class="live">
+    <span>X <strong id="live-x">0.00</strong></span>
+    <span>Y <strong id="live-y">0.00</strong></span>
+    <span>Z <strong id="live-z">0.00</strong></span>
+  </div>
+
+  <h2>Raw data</h2>
+  <p class="hint">Latest 20 stored samples. The full set stays in this browser until you clear it.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>time</th>
+          <th class="label">label</th>
+          <th>x</th>
+          <th>y</th>
+          <th>z</th>
+        </tr>
+      </thead>
+      <tbody id="raw-body"></tbody>
+    </table>
+  </div>
+
+  <h2>Processed data</h2>
+  <p class="hint">Each row is 3 seconds, back to back, with no overlap. A leftover shorter than 3 seconds is dropped. Numbers here are shown to 2 decimals.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="label">label</th>
+          <th>xmax</th><th>xmin</th><th>xave</th><th>xvariance</th>
+          <th>ymax</th><th>ymin</th><th>yave</th><th>yvariance</th>
+          <th>zmax</th><th>zmin</th><th>zave</th><th>zvariance</th>
+        </tr>
+      </thead>
+      <tbody id="processed-body"></tbody>
+    </table>
+  </div>
+
+  <div class="file-actions">
+    <button type="button" class="primary" id="export">Export CSV</button>
+    <button type="button" id="clear">Clear</button>
+  </div>
+
+  <h2>Weka decision tree</h2>
+  <div class="weka">
+    <p>Export the CSV and open it in Weka. Set <strong>label</strong> as the class and train a J48 decision tree on these 3-second features.</p>
+    <p>Bring the tree back and it will be written into this page. Recognition uses the same columns: max, min, average, and variance of x, y, and z.</p>
+  </div>
+
+  <h2>Real-time recognition</h2>
+  <p class="activity-now" id="recognized">waiting for decision tree</p>
+  <p class="hint">This stays off until the decision tree from Weka is added. It will then label each new 3-second window as leg-shaking, leg-crossing, foot-tensing, or still.</p>
+
+  <script>
+    const WINDOW_MS = 3000;
+    const SESSION_MS = 120000;
+    const STORAGE_KEY = "activity-collection-v1";
+    const CSV_COLUMNS = [
+      "label",
+      "xmax", "xmin", "xave", "xvariance",
+      "ymax", "ymin", "yave", "yvariance",
+      "zmax", "zmin", "zave", "zvariance"
+    ];
+
+    const labelsEl = document.getElementById("labels");
+    const startBtn = document.getElementById("start");
+    const stopBtn = document.getElementById("stop");
+    const currentLabelEl = document.getElementById("current-label");
+    const countdownEl = document.getElementById("countdown");
+    const countsEl = document.getElementById("counts");
+    const rawBody = document.getElementById("raw-body");
+    const processedBody = document.getElementById("processed-body");
+
+    let selectedLabel = null;
+    let sessionLabel = null;
+    let recording = false;
+    let listening = false;
+    let windowStart = 0;
+    let sessionDeadline = 0;
+    let windowSamples = [];
+    let rawSamples = [];
+    let processed = [];
+    let countdownTimer = null;
+    let rawRenderTimer = null;
+
+    function formatClock(ms) {
+      const date = new Date(ms);
+      const hh = String(date.getHours()).padStart(2, "0");
+      const mm = String(date.getMinutes()).padStart(2, "0");
+      const ss = String(date.getSeconds()).padStart(2, "0");
+      const millis = String(date.getMilliseconds()).padStart(3, "0");
+      return hh + ":" + mm + ":" + ss + "." + millis;
+    }
+
+    function formatLeft(ms) {
+      const total = Math.ceil(ms / 1000);
+      const minutes = Math.floor(total / 60);
+      const seconds = total % 60;
+      return minutes + ":" + String(seconds).padStart(2, "0");
+    }
+
+    function axisStats(values) {
+      let min = Infinity;
+      let max = -Infinity;
+      let sum = 0;
+      for (let i = 0; i < values.length; i++) {
+        const value = values[i];
+        if (value < min) min = value;
+        if (value > max) max = value;
+        sum += value;
+      }
+      const ave = sum / values.length;
+      let squareSum = 0;
+      for (let i = 0; i < values.length; i++) {
+        const delta = values[i] - ave;
+        squareSum += delta * delta;
+      }
+      return {
+        max: max,
+        min: min,
+        ave: ave,
+        variance: squareSum / values.length
+      };
+    }
+
+    function featuresFrom(samples, label) {
+      const xs = [];
+      const ys = [];
+      const zs = [];
+      for (let i = 0; i < samples.length; i++) {
+        xs.push(samples[i].x);
+        ys.push(samples[i].y);
+        zs.push(samples[i].z);
+      }
+      const x = axisStats(xs);
+      const y = axisStats(ys);
+      const z = axisStats(zs);
+      return {
+        label: label,
+        xmax: x.max, xmin: x.min, xave: x.ave, xvariance: x.variance,
+        ymax: y.max, ymin: y.min, yave: y.ave, yvariance: y.variance,
+        zmax: z.max, zmin: z.min, zave: z.ave, zvariance: z.variance
+      };
+    }
+
+    function persist() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          raw: rawSamples,
+          processed: processed
+        }));
+      } catch (error) {
+        countsEl.textContent = "This browser could not store more data. Export the CSV before leaving the page.";
+        console.error(error);
+      }
+    }
+
+    function restore() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+        if (!saved) return;
+        if (Array.isArray(saved.raw)) rawSamples = saved.raw;
+        if (Array.isArray(saved.processed)) processed = saved.processed;
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    function selectLabel(label) {
+      if (recording) return;
+      selectedLabel = label;
+      const buttons = labelsEl.querySelectorAll("button");
+      for (let i = 0; i < buttons.length; i++) {
+        const on = buttons[i].dataset.label === label;
+        buttons[i].classList.toggle("selected", on);
+        buttons[i].setAttribute("aria-pressed", on ? "true" : "false");
+      }
+      currentLabelEl.textContent = label;
+    }
+
+    function updateButtons() {
+      startBtn.disabled = recording;
+      stopBtn.disabled = !recording;
+      const buttons = labelsEl.querySelectorAll("button");
+      for (let i = 0; i < buttons.length; i++) {
+        buttons[i].disabled = recording;
+      }
+    }
+
+    function renderCounts() {
+      const tally = {
+        "leg-shaking": 0,
+        "leg-crossing": 0,
+        "foot-tensing": 0,
+        "still": 0
+      };
+      for (let i = 0; i < processed.length; i++) {
+        if (tally[processed[i].label] != null) tally[processed[i].label] += 1;
+      }
+      countsEl.textContent =
+        "Raw samples: " + rawSamples.length +
+        " · Windows: " + processed.length +
+        " · leg-shaking " + tally["leg-shaking"] +
+        " · leg-crossing " + tally["leg-crossing"] +
+        " · foot-tensing " + tally["foot-tensing"] +
+        " · still " + tally["still"];
+    }
+
+    function renderRaw() {
+      const latest = rawSamples.slice(-20).reverse();
+      if (latest.length === 0) {
+        rawBody.innerHTML = '<tr><td class="empty" colspan="5">No samples yet.</td></tr>';
+        return;
+      }
+      const html = [];
+      for (let i = 0; i < latest.length; i++) {
+        const sample = latest[i];
+        html.push(
+          "<tr><td>" + formatClock(sample.t) + "</td>" +
+          "<td class=\"label\">" + sample.label + "</td>" +
+          "<td>" + Number(sample.x).toFixed(2) + "</td>" +
+          "<td>" + Number(sample.y).toFixed(2) + "</td>" +
+          "<td>" + Number(sample.z).toFixed(2) + "</td></tr>"
+        );
+      }
+      rawBody.innerHTML = html.join("");
+    }
+
+    function renderProcessed() {
+      if (processed.length === 0) {
+        processedBody.innerHTML = '<tr><td class="empty" colspan="13">No complete windows yet.</td></tr>';
+        return;
+      }
+      const html = [];
+      for (let i = 0; i < processed.length; i++) {
+        const row = processed[i];
+        const cells = [];
+        for (let c = 0; c < CSV_COLUMNS.length; c++) {
+          const key = CSV_COLUMNS[c];
+          if (key === "label") {
+            cells.push("<td class=\"label\">" + row.label + "</td>");
+          } else {
+            cells.push("<td>" + Number(row[key]).toFixed(2) + "</td>");
+          }
+        }
+        html.push("<tr>" + cells.join("") + "</tr>");
+      }
+      processedBody.innerHTML = html.join("");
+    }
+
+    function scheduleRawRender() {
+      if (rawRenderTimer != null) return;
+      rawRenderTimer = setTimeout(function () {
+        rawRenderTimer = null;
+        renderRaw();
+        renderCounts();
+      }, 250);
+    }
+
+    function closeWindow() {
+      if (windowSamples.length === 0) return;
+      processed.push(featuresFrom(windowSamples, sessionLabel));
+      windowSamples = [];
+      persist();
+      renderProcessed();
+      renderCounts();
+    }
+
+    function handleMotion(event) {
+      const accel = event.accelerationIncludingGravity;
+      if (!accel || accel.x == null || accel.y == null || accel.z == null) return;
+
+      document.getElementById("live-x").textContent = Number(accel.x).toFixed(2);
+      document.getElementById("live-y").textContent = Number(accel.y).toFixed(2);
+      document.getElementById("live-z").textContent = Number(accel.z).toFixed(2);
+      if (!recording) return;
+
+      flushCompletedWindows();
+
+      const sample = {
+        t: Date.now(),
+        x: accel.x,
+        y: accel.y,
+        z: accel.z,
+        label: sessionLabel
+      };
+      rawSamples.push(sample);
+      windowSamples.push(sample);
+      scheduleRawRender();
+    }
+
+    function listen() {
+      if (listening) return;
+      window.addEventListener("devicemotion", handleMotion, false);
+      listening = true;
+    }
+
+    function ensurePermission() {
+      if (typeof DeviceMotionEvent !== "undefined" &&
+          typeof DeviceMotionEvent.requestPermission === "function") {
+        return DeviceMotionEvent.requestPermission().then(function (permissionState) {
+          if (permissionState === "granted") {
+            listen();
+            return true;
+          }
+          alert("Permission not granted!");
+          return false;
+        }).catch(function (error) {
+          console.error(error);
+          alert("Could not get motion permission. Open this page in Safari over HTTPS.");
+          return false;
+        });
+      }
+      listen();
+      return Promise.resolve(true);
+    }
+
+    function beginSession() {
+      recording = true;
+      sessionLabel = selectedLabel;
+      windowSamples = [];
+      windowStart = performance.now();
+      sessionDeadline = windowStart + SESSION_MS;
+      updateButtons();
+      currentLabelEl.textContent = sessionLabel;
+      tick();
+      countdownTimer = setInterval(tick, 200);
+    }
+
+    function flushCompletedWindows() {
+      const now = performance.now();
+      while (now >= windowStart + WINDOW_MS) {
+        closeWindow();
+        windowStart += WINDOW_MS;
+      }
+    }
+
+    function tick() {
+      if (recording) flushCompletedWindows();
+      const left = sessionDeadline - performance.now();
+      countdownEl.textContent = formatLeft(Math.max(0, left));
+      if (left <= 0) stopRecording();
+    }
+
+    function startRecording() {
+      if (recording) return;
+      if (!selectedLabel) {
+        alert("Choose an activity first.");
+        return;
+      }
+      ensurePermission().then(function (granted) {
+        if (granted) beginSession();
+      });
+    }
+
+    function stopRecording() {
+      if (!recording) return;
+      flushCompletedWindows();
+      recording = false;
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      windowSamples = [];
+      countdownEl.textContent = "2:00";
+      updateButtons();
+      persist();
+      renderRaw();
+      renderCounts();
+    }
+
+    function buildCsv() {
+      const lines = [CSV_COLUMNS.join(",")];
+      for (let i = 0; i < processed.length; i++) {
+        const row = processed[i];
+        const cells = [];
+        for (let c = 0; c < CSV_COLUMNS.length; c++) {
+          const key = CSV_COLUMNS[c];
+          cells.push(key === "label" ? row.label : Number(row[key]).toFixed(4));
+        }
+        lines.push(cells.join(","));
+      }
+      return lines.join("\n");
+    }
+
+    function exportCsv() {
+      if (processed.length === 0) {
+        alert("No complete 3-second windows yet.");
+        return;
+      }
+      const blob = new Blob([buildCsv()], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "activity-features.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function clearData() {
+      if (recording) return;
+      if (rawSamples.length === 0 && processed.length === 0) return;
+      if (!confirm("Delete all stored raw samples and processed rows?")) return;
+      rawSamples = [];
+      processed = [];
+      windowSamples = [];
+      localStorage.removeItem(STORAGE_KEY);
+      renderRaw();
+      renderProcessed();
+      renderCounts();
+    }
+
+    labelsEl.addEventListener("click", function (event) {
+      const button = event.target.closest("button");
+      if (!button) return;
+      selectLabel(button.dataset.label);
+    });
+    startBtn.addEventListener("click", startRecording);
+    stopBtn.addEventListener("click", stopRecording);
+    document.getElementById("export").addEventListener("click", exportCsv);
+    document.getElementById("clear").addEventListener("click", clearData);
+
+    restore();
+    updateButtons();
+    renderRaw();
+    renderProcessed();
+    renderCounts();
+  </script>
+</body>
+</html>
