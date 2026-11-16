@@ -238,8 +238,8 @@ xvariance &gt; 0.04
 
   <h2>Analysis and discussion</h2>
   <div class="weka">
-    <p>From 140 frames of still, foot tensing, leg crossing, and leg shaking, J48 got 136 right (97.1%). It uses only <code>xvariance</code>, <code>ymax</code>, and <code>ymin</code>. It is striking that these three numbers can separate such small leg motions. The four errors were between neighboring classes.</p>
-    <p>Lower-body movement can say a lot about someone’s internal state, so a pocket accelerometer could be useful beyond labeling exercise. The score is still from one sitting per activity, and still versus foot tensing is mostly a small change in phone tilt. A second recording, after putting the phone back, is needed before trusting it on a new pose.</p>
+    <p>From 140 frames of still, foot tensing, leg crossing, and leg shaking, J48 got 136 right (97.1%). It uses only xvariance, ymax, and ymin. It is impressive that these three numbers can separate such small leg motions.</p>
+    <p>Lower-body movement can say a lot about someone’s internal state, so this could be an addition to stress/comfort detection. Currently, this classifier is trained/tested on one person with one-sitting. Larger scale data is needed to make it more robust.</p>
   </div>
 
   <script>
