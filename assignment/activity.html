@@ -124,9 +124,21 @@
     .empty { color: var(--muted); padding: 0.6rem; }
 
     .activity-now {
-      margin: 0.4rem 0;
-      font-size: 1.5rem;
+      margin: 0.6rem 0 0.2rem;
+      font-size: 2rem;
       font-weight: 700;
+    }
+
+    pre.tree {
+      margin: 0.6rem 0 0;
+      font-family: ui-monospace, "Cascadia Code", monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+    }
+
+    #recognize-log {
+      margin: 0.6rem 0 0;
+      padding-left: 1.2rem;
     }
 
     .weka {
@@ -204,13 +216,20 @@
 
   <h2>Weka decision tree</h2>
   <div class="weka">
-    <p>Export the CSV and open it in Weka. Set <strong>label</strong> as the class and train a J48 decision tree on these 3-second features.</p>
-    <p>Bring the tree back and it will be written into this page. Recognition uses the same columns: max, min, average, and variance of x, y, and z.</p>
+    <p>Real-time detection uses the J48 tree trained on the exported CSV. Each finished 3-second frame is labeled with these rules:</p>
+    <pre class="tree">xvariance &lt;= 0.04
+|   ymax &lt;= -2.624: still
+|   ymax &gt; -2.624: foot-tensing
+xvariance &gt; 0.04
+|   ymin &lt;= -1.4615: leg-crossing
+|   ymin &gt; -1.4615: leg-shaking</pre>
   </div>
 
   <h2>Real-time recognition</h2>
-  <p class="activity-now" id="recognized">waiting for decision tree</p>
-  <p class="hint">This stays off until the decision tree from Weka is added. It will then label each new 3-second window as leg-shaking, leg-crossing, foot-tensing, or still.</p>
+  <button type="button" class="primary" id="recognize">Start real-time detection</button>
+  <p class="activity-now" id="recognized">not detecting</p>
+  <p class="hint" id="recognize-detail">Press the button. The label updates every 3 seconds and is not added to the training table.</p>
+  <ul id="recognize-log"></ul>
 
   <script>
     const WINDOW_MS = 3000;
@@ -227,6 +246,10 @@
     const labelsEl = document.getElementById("labels");
     const startBtn = document.getElementById("start");
     const stopBtn = document.getElementById("stop");
+    const recognizeBtn = document.getElementById("recognize");
+    const recognizedEl = document.getElementById("recognized");
+    const recognizeDetailEl = document.getElementById("recognize-detail");
+    const recognizeLogEl = document.getElementById("recognize-log");
     const currentLabelEl = document.getElementById("current-label");
     const countdownEl = document.getElementById("countdown");
     const countsEl = document.getElementById("counts");
@@ -236,7 +259,12 @@
     let selectedLabel = null;
     let sessionLabel = null;
     let recording = false;
+    let recognizing = false;
     let listening = false;
+    let recognizeOrigin = 0;
+    let recognizeWindowStart = 0;
+    let recognizeSamples = [];
+    let recognizeTimer = null;
     let sessionOrigin = 0;
     let sessionDeadline = 0;
     let nextWindowStart = 0;
@@ -370,12 +398,27 @@
     }
 
     function updateButtons() {
-      startBtn.disabled = recording;
+      startBtn.disabled = recording || recognizing;
       stopBtn.disabled = !recording;
+      recognizeBtn.disabled = recording;
       const buttons = labelsEl.querySelectorAll("button");
       for (let i = 0; i < buttons.length; i++) {
         buttons[i].disabled = recording;
       }
+    }
+
+    function classify(row) {
+      if (row.xvariance <= 0.04) {
+        return row.ymax <= -2.624 ? "still" : "foot-tensing";
+      }
+      return row.ymin <= -1.4615 ? "leg-crossing" : "leg-shaking";
+    }
+
+    function activityName(label) {
+      if (label === "foot-tensing") return "Foot tensing";
+      if (label === "leg-crossing") return "Leg crossing";
+      if (label === "leg-shaking") return "Leg shaking";
+      return "Still";
     }
 
     function renderCounts() {
@@ -486,6 +529,7 @@
       document.getElementById("live-x").textContent = Number(accel.x).toFixed(2);
       document.getElementById("live-y").textContent = Number(accel.y).toFixed(2);
       document.getElementById("live-z").textContent = Number(accel.z).toFixed(2);
+      if (recognizing) recordRecognitionSample(accel);
       if (!recording) return;
 
       const sample = {
@@ -548,8 +592,83 @@
       if (left <= 0) stopRecording();
     }
 
-    function startRecording() {
+    function showRecognition(label, row) {
+      recognizedEl.textContent = activityName(label);
+      recognizeDetailEl.textContent =
+        "xvariance " + row.xvariance.toFixed(4) +
+        " · ymax " + row.ymax.toFixed(4) +
+        " · ymin " + row.ymin.toFixed(4);
+      const item = document.createElement("li");
+      item.textContent = formatClock(Date.now()) + "  " + activityName(label);
+      recognizeLogEl.insertBefore(item, recognizeLogEl.firstChild);
+      while (recognizeLogEl.children.length > 12) {
+        recognizeLogEl.removeChild(recognizeLogEl.lastChild);
+      }
+    }
+
+    function commitRecognition(elapsed) {
+      while (recognizeWindowStart + WINDOW_MS <= elapsed) {
+        const start = recognizeWindowStart;
+        const end = start + WINDOW_MS;
+        recognizeWindowStart = end;
+        const samples = [];
+        const kept = [];
+        for (let i = 0; i < recognizeSamples.length; i++) {
+          const offset = recognizeSamples[i].offset;
+          if (offset >= start && offset < end) samples.push(recognizeSamples[i]);
+          if (offset >= end) kept.push(recognizeSamples[i]);
+        }
+        recognizeSamples = kept;
+        if (samples.length === 0) continue;
+        const row = featuresFrom(samples, "");
+        showRecognition(classify(row), row);
+      }
+    }
+
+    function recordRecognitionSample(accel) {
+      const offset = performance.now() - recognizeOrigin;
+      recognizeSamples.push({ x: accel.x, y: accel.y, z: accel.z, offset: offset });
+      commitRecognition(offset);
+    }
+
+    function beginRecognition() {
+      recognizing = true;
+      recognizeOrigin = performance.now();
+      recognizeWindowStart = 0;
+      recognizeSamples = [];
+      recognizeBtn.textContent = "Stop real-time detection";
+      recognizedEl.textContent = "listening…";
+      recognizeDetailEl.textContent = "The first label appears after 3 seconds.";
+      updateButtons();
+      recognizeTimer = setInterval(function () {
+        if (recognizing) commitRecognition(performance.now() - recognizeOrigin);
+      }, 200);
+    }
+
+    function stopRecognition() {
+      if (!recognizing) return;
+      recognizing = false;
+      clearInterval(recognizeTimer);
+      recognizeTimer = null;
+      recognizeSamples = [];
+      recognizeBtn.textContent = "Start real-time detection";
+      updateButtons();
+    }
+
+    function toggleRecognition() {
       if (recording) return;
+      if (recognizing) {
+        stopRecognition();
+        return;
+      }
+      const permissionPromise = ensurePermission();
+      permissionPromise.then(function (granted) {
+        if (granted && !recording) beginRecognition();
+      });
+    }
+
+    function startRecording() {
+      if (recording || recognizing) return;
       if (!selectedLabel) {
         alert("Choose an activity first.");
         return;
@@ -628,6 +747,7 @@
     });
     startBtn.addEventListener("click", startRecording);
     stopBtn.addEventListener("click", stopRecording);
+    recognizeBtn.addEventListener("click", toggleRecognition);
     document.getElementById("export").addEventListener("click", exportCsv);
     document.getElementById("clear").addEventListener("click", clearData);
 
