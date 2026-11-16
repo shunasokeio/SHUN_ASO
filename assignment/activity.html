@@ -231,7 +231,10 @@ xvariance &gt; 0.04
   </div>
 
   <h2>Real-time recognition</h2>
-  <button type="button" class="primary" id="recognize">Start real-time detection</button>
+  <div class="controls">
+    <button type="button" class="primary" id="recognize">Start real-time detection</button>
+    <button type="button" id="clear-recognition">Clear history</button>
+  </div>
   <p class="activity-now" id="recognized">not detecting</p>
   <p class="hint" id="recognize-detail">Press the button. The label updates every 3 seconds and is not added to the training table.</p>
   <ul id="recognize-log"></ul>
@@ -666,6 +669,13 @@ xvariance &gt; 0.04
       updateButtons();
     }
 
+    function clearRecognitionHistory() {
+      recognizeLogEl.innerHTML = "";
+      if (recognizing) return;
+      recognizedEl.textContent = "not detecting";
+      recognizeDetailEl.textContent = "Press the button. The label updates every 3 seconds and is not added to the training table.";
+    }
+
     function toggleRecognition() {
       if (recording) return;
       if (recognizing) {
@@ -759,6 +769,7 @@ xvariance &gt; 0.04
     startBtn.addEventListener("click", startRecording);
     stopBtn.addEventListener("click", stopRecording);
     recognizeBtn.addEventListener("click", toggleRecognition);
+    document.getElementById("clear-recognition").addEventListener("click", clearRecognitionHistory);
     document.getElementById("export").addEventListener("click", exportCsv);
     document.getElementById("clear").addEventListener("click", clearData);
 
