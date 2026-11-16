@@ -146,6 +146,11 @@
       border: 1px solid var(--line);
       border-radius: 8px;
     }
+
+    .weka code {
+      font-family: ui-monospace, "Cascadia Code", monospace;
+      font-size: 0.9em;
+    }
   </style>
 </head>
 <body>
@@ -230,6 +235,14 @@ xvariance &gt; 0.04
   <p class="activity-now" id="recognized">not detecting</p>
   <p class="hint" id="recognize-detail">Press the button. The label updates every 3 seconds and is not added to the training table.</p>
   <ul id="recognize-log"></ul>
+
+  <h2>Analysis and discussion</h2>
+  <div class="weka">
+    <p>I recorded still, foot tensing, leg crossing, and leg shaking on a phone accelerometer, using 3-second frames with no overlap. The first and last 6 seconds of each take were left out. That produced 140 frames (32 still, 36 of each other class). Each frame has the max, min, average, and variance of x, y, and z. J48, checked with 10-fold cross-validation, classified 136 of 140 frames correctly (97.1%).</p>
+    <p>The tree keeps only three of the twelve features. <code>xvariance</code> at 0.04 separates the two quiet activities from the two that move. <code>ymax</code> at -2.624 then separates still from foot tensing, and <code>ymin</code> at -1.4615 separates leg crossing from leg shaking. In this file those cuts fall in the gaps between the classes: every still frame has <code>ymax</code> at or below -2.624, and every foot-tensing frame is above it. Crossing reaches a lower <code>ymin</code> than shaking.</p>
+    <p>The four mistakes are between neighbors in the tree. One still frame was called foot tensing, one foot-tensing frame was called leg crossing, and two leg-crossing frames were called leg shaking. No still frame was called leg shaking. The class sizes are close, so the score is not inflated by one activity dominating the set.</p>
+    <p>The high score is still a weak test of a new situation. The frames inside one class come from one continuous recording, so a test frame is a lot like the frames the tree trained on. The still versus foot-tensing split is a small difference in phone tilt, not in how hard the foot is tensed. Putting the phone back in the pocket at a slightly different angle can push <code>ymax</code> across -2.624 and swap those two labels. Leg shaking and leg crossing depend on a larger movement, so that split is more likely to hold. A second recording of each activity, made after taking the phone out and putting it back, would be the check that this tree has not merely memorized one sitting.</p>
+  </div>
 
   <script>
     const WINDOW_MS = 3000;
