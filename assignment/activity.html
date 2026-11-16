@@ -31,6 +31,12 @@
 
     .hint { color: var(--muted); }
 
+    mark {
+      background: #e6b800;
+      color: var(--text);
+      padding: 0.05em 0.2em;
+    }
+
     .labels, .controls, .file-actions {
       display: flex;
       flex-wrap: wrap;
@@ -132,7 +138,7 @@
 </head>
 <body>
   <h1>Activity data collection</h1>
-  <p class="hint">Keep the phone in the same pocket. A beep marks Start, Stop, and the end of the two minutes. Turn the ringer on so you can hear it. Rows add up across sessions.</p>
+  <p class="hint">Keep the phone in the same pocket. <mark>A beep marks Start, Stop, and the end of the two minutes.</mark> Turn the ringer on so you can hear it. Rows add up across sessions.</p>
 
   <div class="labels" id="labels">
     <button type="button" data-label="leg-shaking">Leg shaking</button>
