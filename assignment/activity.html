@@ -83,6 +83,17 @@
       border-radius: 8px;
     }
 
+    .processed-wrap {
+      height: 280px;
+      overflow: auto;
+    }
+
+    .processed-wrap thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
@@ -121,7 +132,7 @@
 </head>
 <body>
   <h1>Activity data collection</h1>
-  <p class="hint">Keep the phone in the same pocket. Record two minutes of one activity, then repeat for the others. Rows add up across sessions.</p>
+  <p class="hint">Keep the phone in the same pocket. A beep marks Start, Stop, and the end of the two minutes. Turn the ringer on so you can hear it. Rows add up across sessions.</p>
 
   <div class="labels" id="labels">
     <button type="button" data-label="leg-shaking">Leg shaking</button>
@@ -165,8 +176,8 @@
   </div>
 
   <h2>Processed data</h2>
-  <p class="hint">Each row is 3 seconds, back to back, with no overlap. A leftover shorter than 3 seconds is dropped. Numbers here are shown to 2 decimals.</p>
-  <div class="table-wrap">
+  <p class="hint">Each row is one 3-second frame, back to back. The first 6 seconds and the last 6 seconds are left out, so putting the phone in and taking it out are not saved. Scroll to see every frame.</p>
+  <div class="table-wrap processed-wrap" id="processed-wrap">
     <table>
       <thead>
         <tr>
@@ -197,6 +208,7 @@
 
   <script>
     const WINDOW_MS = 3000;
+    const EDGE_MS = 6000;
     const SESSION_MS = 120000;
     const STORAGE_KEY = "activity-collection-v1";
     const CSV_COLUMNS = [
@@ -219,13 +231,42 @@
     let sessionLabel = null;
     let recording = false;
     let listening = false;
-    let windowStart = 0;
+    let sessionOrigin = 0;
     let sessionDeadline = 0;
-    let windowSamples = [];
+    let nextWindowStart = 0;
+    let sessionSamples = [];
     let rawSamples = [];
     let processed = [];
     let countdownTimer = null;
     let rawRenderTimer = null;
+    let audioCtx = null;
+
+    function prepareBeep() {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        if (!audioCtx) audioCtx = new Ctx();
+        if (audioCtx.state === "suspended") audioCtx.resume();
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    function beep() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      const now = audioCtx.currentTime;
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.45, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.34);
+    }
 
     function formatClock(ms) {
       const date = new Date(ms);
@@ -371,6 +412,8 @@
     }
 
     function renderProcessed() {
+      const wrap = document.getElementById("processed-wrap");
+      const follow = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 48;
       if (processed.length === 0) {
         processedBody.innerHTML = '<tr><td class="empty" colspan="13">No complete windows yet.</td></tr>';
         return;
@@ -390,6 +433,7 @@
         html.push("<tr>" + cells.join("") + "</tr>");
       }
       processedBody.innerHTML = html.join("");
+      if (follow) wrap.scrollTop = wrap.scrollHeight;
     }
 
     function scheduleRawRender() {
@@ -401,10 +445,29 @@
       }, 250);
     }
 
-    function closeWindow() {
-      if (windowSamples.length === 0) return;
-      processed.push(featuresFrom(windowSamples, sessionLabel));
-      windowSamples = [];
+    function commitSafeWindows(elapsed) {
+      const safeEnd = elapsed - EDGE_MS;
+      let added = false;
+      while (nextWindowStart + WINDOW_MS <= safeEnd) {
+        const start = nextWindowStart;
+        const end = start + WINDOW_MS;
+        nextWindowStart = end;
+        if (start < EDGE_MS) continue;
+        const samples = [];
+        for (let i = 0; i < sessionSamples.length; i++) {
+          const offset = sessionSamples[i].offset;
+          if (offset >= start && offset < end) samples.push(sessionSamples[i]);
+        }
+        if (samples.length === 0) continue;
+        processed.push(featuresFrom(samples, sessionLabel));
+        added = true;
+      }
+      const kept = [];
+      for (let i = 0; i < sessionSamples.length; i++) {
+        if (sessionSamples[i].offset >= nextWindowStart) kept.push(sessionSamples[i]);
+      }
+      sessionSamples = kept;
+      if (!added) return;
       persist();
       renderProcessed();
       renderCounts();
@@ -419,17 +482,17 @@
       document.getElementById("live-z").textContent = Number(accel.z).toFixed(2);
       if (!recording) return;
 
-      flushCompletedWindows();
-
       const sample = {
         t: Date.now(),
+        offset: performance.now() - sessionOrigin,
         x: accel.x,
         y: accel.y,
         z: accel.z,
         label: sessionLabel
       };
       rawSamples.push(sample);
-      windowSamples.push(sample);
+      sessionSamples.push(sample);
+      commitSafeWindows(sample.offset);
       scheduleRawRender();
     }
 
@@ -462,25 +525,18 @@
     function beginSession() {
       recording = true;
       sessionLabel = selectedLabel;
-      windowSamples = [];
-      windowStart = performance.now();
-      sessionDeadline = windowStart + SESSION_MS;
+      sessionSamples = [];
+      nextWindowStart = 0;
+      sessionOrigin = performance.now();
+      sessionDeadline = sessionOrigin + SESSION_MS;
       updateButtons();
       currentLabelEl.textContent = sessionLabel;
       tick();
       countdownTimer = setInterval(tick, 200);
     }
 
-    function flushCompletedWindows() {
-      const now = performance.now();
-      while (now >= windowStart + WINDOW_MS) {
-        closeWindow();
-        windowStart += WINDOW_MS;
-      }
-    }
-
     function tick() {
-      if (recording) flushCompletedWindows();
+      if (recording) commitSafeWindows(performance.now() - sessionOrigin);
       const left = sessionDeadline - performance.now();
       countdownEl.textContent = formatLeft(Math.max(0, left));
       if (left <= 0) stopRecording();
@@ -492,23 +548,28 @@
         alert("Choose an activity first.");
         return;
       }
-      ensurePermission().then(function (granted) {
+      const permissionPromise = ensurePermission();
+      prepareBeep();
+      beep();
+      permissionPromise.then(function (granted) {
         if (granted) beginSession();
       });
     }
 
     function stopRecording() {
       if (!recording) return;
-      flushCompletedWindows();
+      commitSafeWindows(performance.now() - sessionOrigin);
       recording = false;
       clearInterval(countdownTimer);
       countdownTimer = null;
-      windowSamples = [];
+      sessionSamples = [];
       countdownEl.textContent = "2:00";
       updateButtons();
       persist();
       renderRaw();
       renderCounts();
+      prepareBeep();
+      beep();
     }
 
     function buildCsv() {
@@ -547,7 +608,7 @@
       if (!confirm("Delete all stored raw samples and processed rows?")) return;
       rawSamples = [];
       processed = [];
-      windowSamples = [];
+      sessionSamples = [];
       localStorage.removeItem(STORAGE_KEY);
       renderRaw();
       renderProcessed();
