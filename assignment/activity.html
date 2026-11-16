@@ -151,6 +151,12 @@
       font-family: ui-monospace, "Cascadia Code", monospace;
       font-size: 0.9em;
     }
+
+    .caution {
+      background: #ffd5d5;
+      color: #b00000;
+      padding: 0.05em 0.2em;
+    }
   </style>
 </head>
 <body>
@@ -242,7 +248,7 @@ xvariance &gt; 0.04
   <h2>Analysis and discussion</h2>
   <div class="weka">
     <p>From 140 frames of still, foot tensing, leg crossing, and leg shaking, J48 got 136 right (97.1%). It uses only xvariance, ymax, and ymin. It is impressive that these three numbers can separate such small leg motions.</p>
-    <p>Lower-body movement can say a lot about someone’s internal state, so this could be an addition to stress/comfort detection. Currently, this classifier is trained/tested on one person with one-sitting. Larger scale data is needed to make it more robust.</p>
+    <p>Lower-body movement can say a lot about someone’s internal state, so this could be an addition to stress/comfort detection. <span class="caution">Currently, this classifier is trained/tested on one person with one-sitting. Larger scale data is needed to make it more robust.</span></p>
   </div>
 
   <script>
